@@ -19,7 +19,8 @@ app.use(cors({
     if (!origin) return callback(null, true);
     const allowedOrigins = [
       'http://localhost:5173',
-      'https://elegant-door-pos.vercel.app'
+      'https://elegant-door-pos.vercel.app',
+      'http://elegant-door-pos.vercel.app'
     ];
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
