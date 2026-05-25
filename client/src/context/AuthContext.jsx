@@ -20,22 +20,30 @@ export const AuthProvider = ({ children }) => {
 
         // Verify token is still valid by calling /auth/me
         try {
+          console.log('[Auth] Verifying token via /auth/me...', { token: savedToken.substring(0,10) + '...' });
           const response = await getMe();
+          console.log('[Auth] /auth/me success:', response);
           setUser(response.data.user);
           localStorage.setItem('user', JSON.stringify(response.data.user));
         } catch (error) {
+          console.error('[Auth] /auth/me failed:', error.message, error.response?.status);
           // ONLY clear token if the server explicitly rejects it (401/403)
           // Do NOT clear on network errors, 500s, or Railway wake-up timeouts
           if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+            console.warn('[Auth] Token rejected (401/403). Clearing session and redirecting.');
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             setToken(null);
             setUser(null);
+          } else {
+            console.log('[Auth] Non-401 error. Keeping session active.');
           }
-          // Otherwise, we keep the user logged in using the cached localStorage data!
         }
+      } else {
+        console.log('[Auth] No saved token or user found in localStorage.');
       }
 
+      console.log('[Auth] initAuth complete. Setting loading to false.');
       setLoading(false);
     };
 
@@ -43,6 +51,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = (userData, tokenData) => {
+    console.log('[Auth] login called. Setting state and localStorage.', { token: tokenData.substring(0,10) + '...' });
     setUser(userData);
     setToken(tokenData);
     localStorage.setItem('token', tokenData);

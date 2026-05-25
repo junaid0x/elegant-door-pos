@@ -15,6 +15,7 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
+    console.log(`[Axios] Request to ${config.url} with token:`, token ? 'YES' : 'NO');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -25,9 +26,14 @@ api.interceptors.request.use(
 
 // Response interceptor — handle 401s globally
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`[Axios] Response from ${response.config.url} - Status: ${response.status}`);
+    return response;
+  },
   (error) => {
+    console.error(`[Axios] Error from ${error.config?.url} - Status:`, error.response?.status);
     if (error.response?.status === 401) {
+      console.warn('[Axios] 401 Intercepted. Removing token and redirecting to /login');
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';

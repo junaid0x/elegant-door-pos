@@ -54,8 +54,18 @@ const Login = () => {
 
     setLoading(true);
     try {
+      console.log('[Login] Attempting login for:', formData.email);
       const response = await loginUser(formData.email, formData.password);
-      login(response.data.user, response.data.token);
+      console.log('[Login] Raw response from loginUser:', response);
+      
+      const userData = response.data?.user;
+      const tokenData = response.data?.token;
+      
+      console.log('[Login] Extracted user:', userData);
+      console.log('[Login] Extracted token:', tokenData ? tokenData.substring(0, 10) + '...' : 'UNDEFINED OR NULL');
+
+      login(userData, tokenData);
+      
       toast.success('Welcome back!');
       navigate('/');
     } catch (error) {
