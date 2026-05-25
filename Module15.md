@@ -220,3 +220,27 @@ A full deployment audit was conducted to migrate the backend to Vercel Serverles
 * Verified clean Vercel compilation with zero unhandled promise rejections.
 * `GET /api/health` successfully returns a `200 OK` payload.
 * The frontend can safely authenticate and hydrate without backend crashes or database connection drops.
+
+## 14. MongoDB Serverless Connection Lifecycle Fix
+
+Following the initial serverless deployment, a critical timing bug was discovered where login requests failed with `Cannot call users.findOne() before initial connection is complete if bufferCommands = false`.
+
+### 14.1. Root Cause
+In traditional Node.js daemon applications, the database connection (`connectDB()`) is initiated asynchronously at startup, and routes don't receive traffic until the server is explicitly listening. In a Vercel Serverless environment, the Express app is invoked *immediately* upon a request. Because the `connectDB()` call was not being `await`ed, Express proceeded to execute the login route handler before the Mongoose connection to MongoDB Atlas was fully established.
+
+### 14.2. Mongo Lifecycle Issue
+Furthermore, `config/db.js` previously contained a strict rule: `bufferCommands: false`. This disabled Mongoose's built-in ability to queue queries while the connection is pending, causing an immediate fatal crash the moment `User.findOne()` was executed.
+
+### 14.3. Files Modified
+* `server/api/index.js`
+* `server/config/db.js`
+
+### 14.4. Cached Connection & Lifecycle Implementation
+* **Connection Await Middleware:** In `server/api/index.js`, the floating `connectDB()` call was refactored into a top-level async middleware: `app.use(async (req, res, next) => { await connectDB(); next(); })`. This guarantees that **no routes execute** until the MongoDB connection promise fully resolves.
+* **Restored Buffering:** Removed the `bufferCommands: false` configuration from `config/db.js`, restoring Mongoose's native capability to safely queue operations during micro-reconnects in the serverless container pool.
+* **Safe Global Cache:** The connection logic cleanly checks `global.mongoose` on every request, avoiding duplicate connections on warm starts while explicitly catching and handling failed promises on cold starts.
+
+### 14.5. Final Vercel Verification
+* **Login Flow:** The `POST /api/auth/login` route now correctly waits for MongoDB before attempting to query the user, eliminating the lifecycle crash entirely.
+* **Cold Starts:** First-time requests safely initialize the connection without timing out.
+* **Repeated Invocations:** Subsequent requests instantly reuse the cached connection, dropping latency dramatically.

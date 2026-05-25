@@ -7,10 +7,18 @@ const connectDB = require('../config/db');
 // Load env vars
 dotenv.config();
 
-// Connect to database
-connectDB();
-
 const app = express();
+
+// Connect to database middleware (ensures connection before routes)
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (error) {
+        console.error('Database connection failed in middleware:', error);
+        res.status(500).json({ success: false, message: 'Database connection failed' });
+    }
+});
 
 // Middleware
 app.use(cors({
