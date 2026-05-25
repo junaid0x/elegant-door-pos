@@ -23,12 +23,16 @@ export const AuthProvider = ({ children }) => {
           const response = await getMe();
           setUser(response.data.user);
           localStorage.setItem('user', JSON.stringify(response.data.user));
-        } catch {
-          // Token expired or invalid — clear everything
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          setToken(null);
-          setUser(null);
+        } catch (error) {
+          // ONLY clear token if the server explicitly rejects it (401/403)
+          // Do NOT clear on network errors, 500s, or Railway wake-up timeouts
+          if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            setToken(null);
+            setUser(null);
+          }
+          // Otherwise, we keep the user logged in using the cached localStorage data!
         }
       }
 

@@ -168,3 +168,25 @@ An audit was conducted on the frontend to resolve a production bug where Vercel 
 ### 11.5. Final Login Verification
 * No local dependencies or `localhost` paths exist in the production bundle.
 * Authentication, dashboard hydration, and CRUD operations across Orders and Quotations will now properly communicate with the external Railway instance without throwing generic `404` proxy misses.
+
+## 12. Production Authentication Persistence Fix
+A production audit was conducted to resolve a session persistence bug where the application would briefly load the dashboard after a successful login, but immediately redirect the user back to the `/login` page on refresh or cold start.
+
+### 12.1. Root Cause Analysis
+* When the application mounts, `AuthContext.jsx` restores the user from `localStorage` and immediately fires an asynchronous verification request to `GET /api/auth/me`.
+* In production environments, backend servers (like Railway free-tier instances) occasionally take a few seconds to wake up from idle, resulting in a temporary network timeout or `502/503` error.
+* The original logic in `AuthContext.jsx` had a generic `catch {}` block that assumed *any* failed request to `getMe()` meant the token was invalid. It would immediately wipe `localStorage` and log the user out, causing a fatal redirect loop on slow connections or sleeping backends.
+
+### 12.2. Files Modified
+* `client/src/context/AuthContext.jsx`
+
+### 12.3. Auth Persistence Fix
+* Modified the `initAuth` error handling logic to be highly specific.
+* The application will now **only** purge the token and session if the backend explicitly responds with a `401 Unauthorized` or `403 Forbidden` status code.
+* For all other errors (Network Error, 502 Bad Gateway, 503 Service Unavailable, or CORS timeouts), the application trusts the cached `localStorage` token and allows the user to remain logged in.
+
+### 12.4. Production Verification
+* **Login flow:** Tested that the token correctly saves to `localStorage` without stringification bugs.
+* **Axios interceptors:** Verified that the global Axios interceptor in `api.js` automatically routes any genuine `401` errors back to login cleanly.
+* **State initialization:** The UI no longer aggressively unmounts the user session if the backend is temporarily slow to respond during initial load.
+* **Redirect loop:** Eradicated the race condition that caused the dashboard to flash before redirecting back to login.
