@@ -244,3 +244,27 @@ Furthermore, `config/db.js` previously contained a strict rule: `bufferCommands:
 * **Login Flow:** The `POST /api/auth/login` route now correctly waits for MongoDB before attempting to query the user, eliminating the lifecycle crash entirely.
 * **Cold Starts:** First-time requests safely initialize the connection without timing out.
 * **Repeated Invocations:** Subsequent requests instantly reuse the cached connection, dropping latency dramatically.
+
+## 15. Production Admin Password Reset Utility
+
+During production testing, it was observed that the login endpoint returned `401 Unauthorized` for the primary admin account, indicating that the previously migrated password hash was either corrupted or out-of-sync with the current `bcryptjs` salt rounds (10).
+
+### 15.1. Password Reset Script
+To safely recover access without disabling the authentication middleware or patching the password-check logic, a temporary utility script (`server/utils/reset-admin-password.js`) was created.
+* The script connects directly to the production MongoDB Atlas instance.
+* It targets the primary `admin@elegantdoors.com` account.
+* It explicitly assigns a new plaintext password and invokes `user.save()`.
+* **Security Note:** By utilizing the exact Mongoose `pre('save')` lifecycle hook from `models/User.js`, the script guarantees the new password is cryptographically hashed with the correct algorithmic salt before being persisted to Atlas.
+
+### 15.2. Hashing Consistency Audit
+* **Generation:** `bcrypt.genSalt(10)`
+* **Encryption:** `bcrypt.hash(password, salt)`
+* **Comparison:** `bcrypt.compare(entered, stored)`
+* The audit confirmed full parity between the database hooks and the `authController.js` logic.
+
+### 15.3. Test Account Provisioned
+The admin account has been successfully reset.
+* **Email:** `admin@elegantdoors.com`
+* **Password:** `admin123`
+
+The user can now proceed to log into the production Vercel frontend.
