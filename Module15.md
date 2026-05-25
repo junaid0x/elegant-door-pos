@@ -112,3 +112,33 @@ The invoice layout was overflowing slightly, causing the browser to generate an 
 * Verified the optimized layout comfortably fits standard order volumes onto a single printed page without triggering a blank second page.
 * Verified that the company logo, table borders, and totals section render proportionally and aligned.
 * Confirmed that internal software UI wrappers and sidebars do not accidentally render in the print spooler.
+
+## 10. Repository Cleanup & Logo Refactor
+A structural cleanup was executed to organize stray files and properly standardize asset imports.
+
+### 10.1. Files Moved
+* Moved `logo-new.png` from the repository root into `client/src/assets/logo-new.png` for Vite to handle natively as a bundled module asset.
+
+### 10.2. Files Deleted
+The following temporary/artifact files were completely removed to clean up the repository:
+* `logo-new.png` (Orphaned root copy)
+* `client/public/logo-new.png` (Duplicate copy)
+* `Fixes13.md` (Temporary debug scratchpad)
+* `Testing.md` (Temporary debug scratchpad)
+* `replace_brand.sh` (Temporary setup script)
+
+### 10.3. Import Path Updates
+* `client/src/components/Sidebar.jsx`: Updated logo implementation to use ES module imports `import logo from '../assets/logo-new.png'` rather than relying on absolute public URLs.
+* `client/src/pages/Invoice.jsx`: Updated print logo implementation to similarly use standard module imports.
+
+### 10.4. Asset Structure Improvements
+* The project now strictly adheres to standard React/Vite guidelines where application-bound UI images (like the primary logo) reside in `src/assets/` rather than cluttering the root directory or `public/` folder unnecessarily. This ensures proper minification, cache-busting, and bundling by Vite.
+
+### 10.5. Verification Steps
+* **Build Verification:** Ran `npm run build` within the `/client` directory. Vite confirmed that `logo-new-*.png` was properly hashed and emitted into the `dist/assets/` bundle.
+* **Component Verification:** Verified that `Sidebar.jsx` and `Invoice.jsx` continue to render the logo flawlessly.
+
+### 10.6. Issues Fixed
+* Resolved the improper root placement of `logo-new.png` which could cause confusion for new developers.
+* Eliminated duplicate assets taking up unnecessary space.
+* Purged stale debug documentation left behind from previous generative sessions, improving directory legibility.

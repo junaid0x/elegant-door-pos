@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getOrder } from '../services/orderService';
+import logo from '../assets/logo-new.png';
 import toast from 'react-hot-toast';
 import {
   HiOutlinePrinter,
@@ -98,7 +99,7 @@ const Invoice = () => {
           <div className="flex flex-col sm:flex-row justify-between items-start gap-8 mb-12 print:mb-6">
             <div>
               <img 
-                src="/logo-new.png" 
+                src={logo} 
                 alt="Elegant Doors" 
                 className="h-16 object-contain mb-4"
                 onError={(e) => {

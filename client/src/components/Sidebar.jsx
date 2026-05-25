@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import logo from '../assets/logo-new.png';
 import {
   HiOutlineHome,
   HiOutlineTag,
@@ -40,7 +41,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         {/* Logo */}
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 bg-white">
           <div className="flex items-center gap-2">
-            <img src="/logo-new.png" alt="Elegant Doors Logo" className="h-8 w-auto object-contain" />
+            <img src={logo} alt="Elegant Doors Logo" className="h-8 w-auto object-contain" />
           </div>
           <button
             onClick={onClose}
