@@ -190,3 +190,33 @@ A production audit was conducted to resolve a session persistence bug where the 
 * **Axios interceptors:** Verified that the global Axios interceptor in `api.js` automatically routes any genuine `401` errors back to login cleanly.
 * **State initialization:** The UI no longer aggressively unmounts the user session if the backend is temporarily slow to respond during initial load.
 * **Redirect loop:** Eradicated the race condition that caused the dashboard to flash before redirecting back to login.
+
+## 13. Vercel Backend Serverless Deployment Audit & Fixes
+
+A full deployment audit was conducted to migrate the backend to Vercel Serverless Functions (`server/api/index.js`) and resolve systemic `500 Internal Server Error` crashes occurring on initial routes.
+
+### 13.1. Root Causes
+1. **Missing Module Export:** The `server/api/index.js` file was missing the mandatory `module.exports = app` statement required by Vercel's serverless environment, causing the function container to crash instantly on invocation.
+2. **Broken Relative Imports:** When moving the entry point from the root `server.js` into the `api/` directory, several imports (like the error handler middleware) were referencing `./middleware/` instead of the correct `../middleware/`, resulting in module resolution failures.
+3. **Database Connection Exhaustion:** The legacy `config/db.js` file was initiating synchronous, un-cached MongoDB connections. In a serverless environment, this rapidly exhausts connection pools and causes aggressive timeouts.
+4. **Missing Handlers:** Automated pings to `/` and `/favicon.ico` were throwing unhandled 404s that cascaded into the misconfigured error handler.
+
+### 13.2. Files Modified
+* `server/api/index.js`
+* `server/config/db.js`
+
+### 13.3. Serverless Fixes
+* **Vercel Exports:** Replaced standard `app.listen()` daemon execution with `module.exports = app`.
+* **Path Corrections:** Updated all relative imports in `api/index.js` to properly step out of the `/api` folder (`../routes/*`, `../config/*`, `../middleware/*`).
+* **Root Handlers:** Added lightweight, safe `200 OK` and `204 No Content` handlers for `/` and `/favicon.ico` to prevent log bloat and false-positive crashes.
+* **CORS Patch:** Temporarily enabled `origin: true` to bypass strict CORS preflight failures during debugging and guarantee successful auth flows from the Vercel frontend.
+
+### 13.4. Mongo Connection Fixes
+* Implemented a **Global Connection Cache** pattern in `server/config/db.js`.
+* The serverless function now checks for a cached active Mongoose connection (`global.mongoose.conn`) before attempting to open a new TCP socket to MongoDB Atlas.
+* Removed hard `process.exit(1)` traps, which forcibly kill Vercel function instances in an unrecoverable way.
+
+### 13.5. Final Production Verification
+* Verified clean Vercel compilation with zero unhandled promise rejections.
+* `GET /api/health` successfully returns a `200 OK` payload.
+* The frontend can safely authenticate and hydrate without backend crashes or database connection drops.

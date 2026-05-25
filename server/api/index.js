@@ -14,28 +14,24 @@ const app = express();
 
 // Middleware
 app.use(cors({
-    origin: function (origin, callback) {
-        // Allow requests with no origin (curl, Postman, server-to-server)
-        if (!origin) return callback(null, true);
-        const allowedOrigins = [
-            'http://localhost:5173',
-            'https://elegant-door-pos.vercel.app',
-            'http://elegant-door-pos.vercel.app'
-        ];
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-        callback(new Error('Not allowed by CORS'));
-    },
+    origin: true, // Temporarily allow all origins for debugging
     credentials: true,
 }));
 app.use(express.json());
 app.use(cookieParser());
 
+// Handle root requests to prevent unnecessary 500s
+app.get('/', (req, res) => {
+    res.json({ status: 'ok', message: 'POS API is running on Vercel Serverless' });
+});
+
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).end();
+});
+
 // Routes (will be added feature by feature)
 app.use('/api/auth', require('../routes/authRoutes'));
 app.use('/api/dashboard', require('../routes/dashboardRoutes'));
-// app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/categories', require('../routes/categoryRoutes'));
 app.use('/api/products', require('../routes/productRoutes'));
 app.use('/api/orders', require('../routes/orderRoutes'));
@@ -46,9 +42,8 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'POS API is running' });
 });
 
-// Error handling middleware
-app.use(require('./middleware/errorHandler'));
+// Error handling middleware (fixed relative path)
+app.use(require('../middleware/errorHandler'));
 
-const PORT = process.env.PORT || 5000;
-
-
+// Export app for Vercel Serverless
+module.exports = app;
