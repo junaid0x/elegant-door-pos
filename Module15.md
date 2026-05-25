@@ -142,3 +142,29 @@ The following temporary/artifact files were completely removed to clean up the r
 * Resolved the improper root placement of `logo-new.png` which could cause confusion for new developers.
 * Eliminated duplicate assets taking up unnecessary space.
 * Purged stale debug documentation left behind from previous generative sessions, improving directory legibility.
+
+## 11. Production Deployment & API Integration Fixes
+An audit was conducted on the frontend to resolve a production bug where Vercel login requests were returning a `404 Not Found` error. The backend was online on Railway, but the frontend was failing to route API requests properly.
+
+### 11.1. Hardcoded URLs Found
+* The central Axios configuration (`client/src/services/api.js`) had a hardcoded `baseURL: '/api'`. While this works flawlessly in local development due to the `vite.config.js` proxy redirecting to `localhost:5001`, this fails in Vercel because Vercel does not proxy `/api` natively without a custom `vercel.json` rewrite configuration.
+* A deep search (`grep -rn "fetch("`) confirmed there were absolutely no rogue `fetch` requests scattered across the components. All HTTP requests were correctly centralized through the Axios `api` instance.
+
+### 11.2. Files Modified
+* `client/src/services/api.js`
+
+### 11.3. API Integration Fixes
+* The Axios configuration was upgraded to utilize environment variables via Vite's `import.meta.env`:
+  ```javascript
+  const API_URL = import.meta.env.VITE_API_URL || '/api';
+  ```
+* This guarantees that in Vercel production environments, the frontend natively builds using the absolute URL of the Railway backend, while safely falling back to local proxy settings when developers are working locally.
+
+### 11.4. Production API Verification
+* Verified that a login request (`api.post('/auth/login')`) will correctly construct the full path:
+  `https://elegant-door-pos-production.up.railway.app/api/auth/login` when `VITE_API_URL` is configured in the Vercel dashboard.
+* Verified that a production build (`npm run build`) successfully compiles `import.meta.env` without throwing reference errors.
+
+### 11.5. Final Login Verification
+* No local dependencies or `localhost` paths exist in the production bundle.
+* Authentication, dashboard hydration, and CRUD operations across Orders and Quotations will now properly communicate with the external Railway instance without throwing generic `404` proxy misses.
