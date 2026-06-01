@@ -20,6 +20,7 @@ import EditOrder from './pages/EditOrder';
 import Invoice from './pages/Invoice';
 import Quotations from './pages/Quotations';
 import CreateQuotation from './pages/CreateQuotation';
+import EditQuotation from './pages/EditQuotation';
 import QuotationDetail from './pages/QuotationDetail';
 import Users from './pages/Users';
 import Profile from './pages/Profile';
@@ -53,6 +54,7 @@ const App = () => {
             <Route path="/orders/:id/invoice" element={<Invoice />} />
             <Route path="/quotations" element={<Quotations />} />
             <Route path="/quotations/create" element={<CreateQuotation />} />
+            <Route path="/quotations/:id/edit" element={<EditQuotation />} />
             <Route path="/quotations/:id" element={<QuotationDetail />} />
             <Route path="/users" element={<Users />} />
             <Route path="/profile" element={<Profile />} />

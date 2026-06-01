@@ -361,6 +361,18 @@ const Quotations = () => {
                             <HiOutlineEye className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => navigate(`/quotations/${quotation._id}/edit`)}
+                            className={`p-2 rounded-md transition-colors ${
+                              quotation.status === 'converted'
+                                ? 'text-gray-300 cursor-not-allowed opacity-50'
+                                : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                            }`}
+                            title={quotation.status === 'converted' ? "Cannot edit converted quotations" : "Edit Quotation"}
+                            disabled={quotation.status === 'converted'}
+                          >
+                            <HiOutlinePencil className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => {
                               // We only have one detail view for quotations which acts as the printable page too
                               navigate(`/quotations/${quotation._id}`);

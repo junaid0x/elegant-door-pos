@@ -232,6 +232,7 @@ const Dashboard = () => {
       value: stats.totalCategories,
       icon: HiOutlineTag,
       color: 'slate',
+      onClick: () => navigate('/categories')
     },
   ];
 

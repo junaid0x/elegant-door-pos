@@ -22,6 +22,23 @@ const getAggregatedStockMap = async (items) => {
         }
       }
     }
+    
+    // Additional deductions for manually linked Hinge and Jamb products
+    if (item.hingeProduct) {
+      const hingeId = item.hingeProduct.toString();
+      const hingeQty = Number(item.hingeQuantity) || 0;
+      if (hingeQty > 0) {
+        stockMap[hingeId] = (stockMap[hingeId] || 0) + hingeQty;
+      }
+    }
+    
+    if (item.jambProduct) {
+      const jambId = item.jambProduct.toString();
+      const jambQty = Number(item.jambQuantity) || 0;
+      if (jambQty > 0) {
+        stockMap[jambId] = (stockMap[jambId] || 0) + jambQty;
+      }
+    }
   }
   return stockMap;
 };

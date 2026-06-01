@@ -28,6 +28,24 @@ const orderItemSchema = new mongoose.Schema({
     type: Number,
     required: [true, 'Line total is required'],
   },
+  location: { type: String, trim: true },
+  size: { type: String, trim: true },
+  jamb: { type: String, trim: true }, // Legacy field, keeping for backward compatibility
+  jambProduct: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product',
+  },
+  jambQuantity: { type: Number, min: 0, default: 0 },
+  jambCustom: { type: String, trim: true },
+  hingeProduct: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product',
+  },
+  hingeQuantity: { type: Number, min: 0, default: 0 },
+  hingeCustom: { type: String, trim: true },
+  leftHand: { type: Number, min: 0 },
+  rightHand: { type: Number, min: 0 },
+  description: { type: String, trim: true },
 });
 
 const orderSchema = new mongoose.Schema(
@@ -45,6 +63,26 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
     tax: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    gst: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    pst: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    delivery: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    discount: {
       type: Number,
       default: 0,
       min: 0,

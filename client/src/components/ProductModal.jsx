@@ -14,6 +14,7 @@ const ProductModal = ({
     name: '',
     sku: '',
     barcode: '',
+    sizes: [],
     category: '',
     quantity: 0,
     price: 0,
@@ -34,6 +35,7 @@ const ProductModal = ({
           name: product.name || '',
           sku: product.sku || '',
           barcode: product.barcode || '',
+          sizes: product.sizes || [],
           category: product.category?._id || product.category || '',
           quantity: product.quantity || 0,
           price: product.price || 0,
@@ -49,6 +51,7 @@ const ProductModal = ({
           name: '',
           sku: '',
           barcode: '',
+          sizes: [],
           category: '',
           quantity: 0,
           price: 0,
@@ -138,6 +141,28 @@ const ProductModal = ({
       const newBundles = [...prev.bundles];
       newBundles[index] = { ...newBundles[index], [field]: parsedValue };
       return { ...prev, bundles: newBundles };
+    });
+  };
+
+  const handleAddSize = () => {
+    setFormData((prev) => ({
+      ...prev,
+      sizes: [...prev.sizes, ''],
+    }));
+  };
+
+  const handleRemoveSize = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      sizes: prev.sizes.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleSizeChange = (index, value) => {
+    setFormData((prev) => {
+      const newSizes = [...prev.sizes];
+      newSizes[index] = value;
+      return { ...prev, sizes: newSizes };
     });
   };
 
@@ -268,6 +293,47 @@ const ProductModal = ({
                     placeholder="Optional barcode"
                     className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-400/50 focus:border-brand-400/50 transition-all text-sm"
                   />
+                </div>
+
+                {/* Sizes Field */}
+                <div className="col-span-1 md:col-span-2 border-t border-gray-100 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Product Sizes
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleAddSize}
+                      className="text-sm text-brand-600 hover:text-brand-700 font-medium"
+                    >
+                      + Add Size
+                    </button>
+                  </div>
+                  {formData.sizes.length === 0 ? (
+                    <p className="text-sm text-gray-400 italic">No predefined sizes. (Can still be entered manually on orders)</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {formData.sizes.map((size, index) => (
+                        <div key={index} className="flex items-center gap-3">
+                          <input
+                            type="text"
+                            value={size}
+                            onChange={(e) => handleSizeChange(index, e.target.value)}
+                            placeholder="e.g. 3.0x7.6x1-3/4"
+                            className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-400/50 focus:border-brand-400/50 transition-all text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSize(index)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                            title="Remove size"
+                          >
+                            <HiOutlineX className="w-5 h-5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Category Field */}

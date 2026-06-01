@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { getProducts } from '../services/productService';
-import { createQuotation } from '../services/quotationService';
+import { getQuotation, updateQuotation } from '../services/quotationService';
 import toast from 'react-hot-toast';
 import {
   HiOutlineArrowLeft,
@@ -11,11 +11,16 @@ import {
   HiOutlineShoppingBag,
 } from 'react-icons/hi';
 
-const CreateQuotation = () => {
+const EditQuotation = () => {
+  const { id } = useParams();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
+  const [initialFetchLoading, setInitialFetchLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
   const [products, setProducts] = useState([]);
+  const [quotationNumber, setQuotationNumber] = useState('');
 
   // Header State
   const [customerName, setCustomerName] = useState('');
@@ -29,41 +34,80 @@ const CreateQuotation = () => {
   const [discountAmount, setDiscountAmount] = useState(0);
   
   // Items State
-  const [items, setItems] = useState([
-    {
-      id: crypto.randomUUID(),
-      type: 'product',
-      product: '',
-      customName: '',
-      quantity: 1,
-      unitPrice: 0,
-      location: '',
-      size: '',
-      leftHand: '',
-      rightHand: '',
-      jambType: 'custom', // 'inventory' | 'custom'
-      jambProduct: '',
-      jambQuantity: '',
-      jambCustom: '',
-      hingeType: 'custom', // 'inventory' | 'custom'
-      hingeProduct: '',
-      hingeQuantity: '',
-      hingeCustom: '',
-      description: '',
-    },
-  ]);
+  const [items, setItems] = useState([]);
 
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchData = async () => {
       try {
-        const res = await getProducts();
-        setProducts(res.data);
+        setError(null);
+        const [productsRes, quotationRes] = await Promise.all([
+          getProducts(),
+          getQuotation(id)
+        ]);
+        
+        setProducts(productsRes.data);
+        const quotation = quotationRes.data;
+        
+        if (quotation.status === 'converted') {
+          setError('This quotation has been converted to an order and can no longer be edited.');
+          setInitialFetchLoading(false);
+          return;
+        }
+
+        setQuotationNumber(quotation.quotationNumber);
+        setCustomerName(quotation.customerInfo?.name || '');
+        setStatus(quotation.status || 'draft');
+        setNotes(quotation.notes || '');
+        
+        setDeliveryFee(quotation.delivery || 0);
+        setDiscountAmount(quotation.discount || 0);
+        
+        // Reverse calculate rates from amounts if subtotal exists
+        const discSub = Math.max(0, quotation.subtotal - (quotation.discount || 0));
+        if (discSub > 0) {
+          if (quotation.gst !== undefined) setGstRate(Number(((quotation.gst / discSub) * 100).toFixed(2)));
+          if (quotation.pst !== undefined) setPstRate(Number(((quotation.pst / discSub) * 100).toFixed(2)));
+        }
+        
+        const mappedItems = quotation.items.map((item) => {
+          const isJambInventory = !!item.jambProduct;
+          const isHingeInventory = !!item.hingeProduct;
+
+          return {
+            id: crypto.randomUUID(),
+            type: item.product ? 'product' : 'custom',
+            product: item.product?._id || '',
+            customName: item.customName || '',
+            quantity: item.quantity || 1,
+            unitPrice: item.unitPrice || 0,
+            location: item.location || '',
+            size: item.size || '',
+            leftHand: item.leftHand !== undefined && item.leftHand !== null ? item.leftHand : '',
+            rightHand: item.rightHand !== undefined && item.rightHand !== null ? item.rightHand : '',
+            jambType: isJambInventory ? 'inventory' : 'custom',
+            jambProduct: item.jambProduct || '',
+            jambQuantity: item.jambQuantity || '',
+            jambCustom: item.jambCustom || item.jamb || '', // fallback to legacy jamb field
+            hingeType: isHingeInventory ? 'inventory' : 'custom',
+            hingeProduct: item.hingeProduct || '',
+            hingeQuantity: item.hingeQuantity || '',
+            hingeCustom: item.hingeCustom || '',
+            description: item.description || '',
+          };
+        });
+        
+        setItems(mappedItems);
       } catch (err) {
-        toast.error('Failed to load products');
+        const message = err.response?.data?.message || 'Failed to load quotation data';
+        setError(message);
+        toast.error(message);
+      } finally {
+        setInitialFetchLoading(false);
       }
     };
-    fetchProducts();
-  }, []);
+    
+    fetchData();
+  }, [id]);
 
   const handleAddLine = () => {
     setItems([
@@ -92,18 +136,18 @@ const CreateQuotation = () => {
     ]);
   };
 
-  const handleRemoveLine = (id) => {
+  const handleRemoveLine = (itemId) => {
     if (items.length === 1) {
       toast.error('Quotation must have at least one line');
       return;
     }
-    setItems(items.filter((item) => item.id !== id));
+    setItems(items.filter((item) => item.id !== itemId));
   };
 
-  const handleUpdateLine = (id, field, value) => {
+  const handleUpdateLine = (itemId, field, value) => {
     setItems(
       items.map((item) => {
-        if (item.id === id) {
+        if (item.id === itemId) {
           const updatedItem = { ...item, [field]: value };
 
           if (field === 'product' && value !== '') {
@@ -199,16 +243,39 @@ const CreateQuotation = () => {
         total,
       };
 
-      await createQuotation(payload);
-      toast.success('Quotation created successfully!');
+      await updateQuotation(id, payload);
+      toast.success('Quotation updated successfully!');
       navigate('/quotations');
     } catch (err) {
-      const message = err.response?.data?.message || 'Failed to create quotation';
+      const message = err.response?.data?.message || 'Failed to update quotation';
       toast.error(message);
     } finally {
       setLoading(false);
     }
   };
+
+  if (initialFetchLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-2xl mx-auto p-6 bg-red-50 border border-red-200 rounded-xl text-center mt-12">
+        <h3 className="text-lg font-semibold text-red-700 mb-2">Notice</h3>
+        <p className="text-red-500 mb-4">{error}</p>
+        <button
+          onClick={() => navigate('/quotations')}
+          className="px-4 py-2 bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+        >
+          Return to Quotations
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto pb-12">
@@ -223,9 +290,9 @@ const CreateQuotation = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
               <HiOutlineShoppingBag className="w-6 h-6 text-brand-600" />
-              Create Quotation
+              Edit Quotation {quotationNumber && <span className="text-gray-400 font-mono text-xl">#{quotationNumber}</span>}
             </h1>
-            <p className="text-gray-500 text-sm mt-1">Draft a new customer quotation with door configurations</p>
+            <p className="text-gray-500 text-sm mt-1">Modify quotation lines</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -241,7 +308,7 @@ const CreateQuotation = () => {
             className="inline-flex items-center gap-2 px-6 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
           >
             <HiOutlineSave className="w-4 h-4" />
-            {loading ? 'Saving...' : 'Save Quotation'}
+            {loading ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>
@@ -721,4 +788,4 @@ const CreateQuotation = () => {
   );
 };
 
-export default CreateQuotation;
+export default EditQuotation;
