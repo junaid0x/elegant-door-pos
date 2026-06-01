@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   getProducts,
   createProduct,
@@ -110,11 +111,22 @@ const DeleteDialog = ({ isOpen, product, onConfirm, onCancel, loading }) => {
 // ─── Products Page ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 const Products = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterParam = searchParams.get('filter');
+
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeFilter, setActiveFilter] = useState('All'); // All, In Stock, Low Inventory, Out Of Stock
+  const [activeFilter, setActiveFilter] = useState(filterParam || 'All'); // All, In Stock, Low Inventory, Out Of Stock
+
+  useEffect(() => {
+    if (filterParam) {
+      setActiveFilter(filterParam);
+    } else {
+      setActiveFilter('All');
+    }
+  }, [filterParam]);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -261,7 +273,15 @@ const Products = () => {
         {['All', 'In Stock', 'Low Inventory', 'Out Of Stock'].map((filter) => (
           <button
             key={filter}
-            onClick={() => setActiveFilter(filter)}
+            onClick={() => {
+              setActiveFilter(filter);
+              if (filter === 'All') {
+                searchParams.delete('filter');
+                setSearchParams(searchParams);
+              } else {
+                setSearchParams({ filter });
+              }
+            }}
             className={`
               whitespace-nowrap px-4 py-2 text-sm font-medium transition-colors border-b-2
               ${

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getDashboardStats } from '../services/dashboardService';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -21,7 +22,7 @@ const Skeleton = ({ className = '' }) => (
 );
 
 // ─── Stat Card ──────────────────────────────────────────────────────
-const StatCard = ({ title, value, icon: Icon, color, loading }) => {
+const StatCard = ({ title, value, icon: Icon, color, loading, onClick }) => {
   const colorMap = {
     blue: {
       bg: 'bg-blue-50',
@@ -71,7 +72,10 @@ const StatCard = ({ title, value, icon: Icon, color, loading }) => {
 
   return (
     <div
-      className={`${c.bg} border ${c.border} rounded-xl p-5 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5`}
+      onClick={onClick}
+      className={`${c.bg} border ${c.border} rounded-xl p-5 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
+        onClick ? 'cursor-pointer hover:opacity-80' : ''
+      }`}
     >
       <div className="flex items-start justify-between">
         <div>
@@ -139,6 +143,7 @@ const InventoryBar = ({ label, value, total, colorClass, textColorClass }) => {
 // ═══════════════════════════════════════════════════════════════════
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalProducts: 0,
     inStock: 0,
@@ -187,24 +192,28 @@ const Dashboard = () => {
       value: stats.totalProducts,
       icon: HiOutlineCube,
       color: 'blue',
+      onClick: () => navigate('/products')
     },
     {
       title: 'In Stock',
       value: stats.inStock,
       icon: HiOutlineCheckCircle,
       color: 'green',
+      onClick: () => navigate('/products?filter=In+Stock')
     },
     {
       title: 'Low Inventory',
       value: stats.lowInventory,
       icon: HiOutlineExclamation,
       color: 'amber',
+      onClick: () => navigate('/products?filter=Low+Inventory')
     },
     {
       title: 'Out of Stock',
       value: stats.outOfStock,
       icon: HiOutlineXCircle,
       color: 'red',
+      onClick: () => navigate('/products?filter=Out+Of+Stock')
     },
     {
       title: 'Total Users',
