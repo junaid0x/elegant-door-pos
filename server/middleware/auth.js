@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const prisma = require('../config/prisma');
 
 // Protect routes — verify JWT token
 const protect = async (req, res, next) => {
@@ -22,7 +22,10 @@ const protect = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Get user from token
-    const user = await User.findById(decoded.id);
+    const user = await prisma.user.findUnique({
+      where: { id: Number(decoded.id) }
+    });
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -37,6 +40,11 @@ const protect = async (req, res, next) => {
       });
     }
 
+    // Map Prisma id to Mongoose _id for backwards compatibility
+    user._id = user.id;
+    // Map Prisma uppercase roles to lowercase for frontend/middleware compatibility
+    user.role = user.role.toLowerCase();
+
     req.user = user;
     next();
   } catch (error) {
@@ -50,6 +58,7 @@ const protect = async (req, res, next) => {
 // Authorize by role — restrict to specific roles
 const authorize = (...roles) => {
   return (req, res, next) => {
+    // Both sides are lowercase since we mapped user.role to lowercase
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,

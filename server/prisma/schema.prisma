@@ -1,0 +1,260 @@
+// This schema is designed for MySQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(50)
+  email     String   @unique @db.VarChar(100)
+  password  String   @db.VarChar(255)
+  role      Role     @default(MANAGER)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+}
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique @db.VarChar(50)
+  description String?   @db.VarChar(200)
+  products    Product[]
+  
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("categories")
+}
+
+model Product {
+  id                Int      @id @default(autoincrement())
+  categoryId        Int      @map("category_id")
+  sku               String   @unique @db.VarChar(100)
+  barcode           String?  @default("") @db.VarChar(100)
+  name              String   @db.VarChar(100)
+  description       String?  @db.Text
+  lowStockThreshold Int      @default(5) @map("low_stock_threshold")
+  
+  // Relations
+  category          Category @relation(fields: [categoryId], references: [id])
+  variants          ProductVariant[]
+  
+  // Static Predefined Bundles (Self-Relation)
+  bundlesAsParent   ProductBundle[]  @relation("ParentProduct")
+  bundlesAsChild    ProductBundle[]  @relation("ChildProduct")
+
+  // Dynamic Accessory Relations from Orders/Quotations
+  orderItems        OrderItem[]      @relation("MainProduct")
+  orderItemJambs    OrderItem[]      @relation("JambProduct")
+  orderItemHinges   OrderItem[]      @relation("HingeProduct")
+  
+  quotationItems      QuotationItem[]  @relation("MainProduct")
+  quotationItemJambs  QuotationItem[]  @relation("JambProduct")
+  quotationItemHinges QuotationItem[]  @relation("HingeProduct")
+
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model ProductVariant {
+  id         Int      @id @default(autoincrement())
+  productId  Int      @map("product_id")
+  size       String?  @db.VarChar(50) // Null for sizeless products
+  price      Decimal  @db.Decimal(10, 2)
+  quantity   Int      @default(0)
+  
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  orderItems     OrderItem[]
+  quotationItems QuotationItem[]
+
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([productId, size]) // A product cannot have duplicate size names
+  @@map("product_variants")
+}
+
+model ProductBundle {
+  id               Int     @id @default(autoincrement())
+  parentProductId  Int     @map("parent_product_id")
+  childProductId   Int     @map("child_product_id")
+  quantity         Int     @default(1)
+
+  parentProduct    Product @relation("ParentProduct", fields: [parentProductId], references: [id], onDelete: Cascade)
+  childProduct     Product @relation("ChildProduct", fields: [childProductId], references: [id], onDelete: Cascade)
+
+  @@unique([parentProductId, childProductId])
+  @@index([childProductId])
+  @@map("product_bundles")
+}
+
+model Order {
+  id            Int      @id @default(autoincrement())
+  orderNumber   String   @unique @map("order_number") @db.VarChar(50)
+  status        OrderStatus @default(DRAFT)
+  subtotal      Decimal  @db.Decimal(10, 2)
+  tax           Decimal  @default(0.00) @db.Decimal(10, 2)
+  gst           Decimal  @default(0.00) @db.Decimal(10, 2)
+  pst           Decimal  @default(0.00) @db.Decimal(10, 2)
+  delivery      Decimal  @default(0.00) @db.Decimal(10, 2)
+  discount      Decimal  @default(0.00) @db.Decimal(10, 2)
+  total         Decimal  @db.Decimal(10, 2)
+  paymentMethod String?  @map("payment_method") @db.VarChar(50)
+  
+  customerName    String? @map("customer_name") @db.VarChar(100)
+  customerEmail   String? @map("customer_email") @db.VarChar(100)
+  customerPhone   String? @map("customer_phone") @db.VarChar(50)
+  customerAddress String? @map("customer_address") @db.Text
+  
+  notes           String? @db.Text
+  items         OrderItem[]
+  quotations    Quotation[] 
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("orders")
+}
+
+enum OrderStatus {
+  DRAFT
+  IN_PROCESSED
+  PAYMENT_PENDING
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
+model OrderItem {
+  id              Int      @id @default(autoincrement())
+  orderId         Int      @map("order_id")
+  
+  productId       Int?     @map("product_id") 
+  variantId       Int?     @map("variant_id") 
+  customName      String?  @map("custom_name") @db.VarChar(100)
+  
+  quantity        Int
+  unitPrice       Decimal  @map("unit_price") @db.Decimal(10, 2)
+  lineTotal       Decimal  @map("line_total") @db.Decimal(10, 2)
+  
+  location        String?  @db.VarChar(100)
+  size            String?  @db.VarChar(50) 
+  jamb            String?  @db.VarChar(100) 
+  jambCustom      String?  @map("jamb_custom") @db.VarChar(100)
+  hingeCustom     String?  @map("hinge_custom") @db.VarChar(100)
+  leftHand        Int?     @map("left_hand") @default(0)
+  rightHand       Int?     @map("right_hand") @default(0)
+  description     String?  @db.Text
+  
+  jambProductId   Int?     @map("jamb_product_id")
+  jambQuantity    Int?     @map("jamb_quantity") @default(0)
+  hingeProductId  Int?     @map("hinge_product_id")
+  hingeQuantity   Int?     @map("hinge_quantity") @default(0)
+
+  // Relations
+  order           Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product         Product?        @relation("MainProduct", fields: [productId], references: [id], onDelete: SetNull)
+  variant         ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  jambProduct     Product?        @relation("JambProduct", fields: [jambProductId], references: [id], onDelete: SetNull)
+  hingeProduct    Product?        @relation("HingeProduct", fields: [hingeProductId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+  @@index([jambProductId])
+  @@index([hingeProductId])
+  @@map("order_items")
+}
+
+model Quotation {
+  id            Int      @id @default(autoincrement())
+  quotationNum  String   @unique @map("quotation_number") @db.VarChar(50)
+  status        QuotationStatus @default(DRAFT)
+  subtotal      Decimal  @db.Decimal(10, 2)
+  tax           Decimal  @default(0.00) @db.Decimal(10, 2)
+  gst           Decimal  @default(0.00) @db.Decimal(10, 2)
+  pst           Decimal  @default(0.00) @db.Decimal(10, 2)
+  delivery      Decimal  @default(0.00) @db.Decimal(10, 2)
+  discount      Decimal  @default(0.00) @db.Decimal(10, 2)
+  total         Decimal  @db.Decimal(10, 2)
+  
+  convertedToOrderId Int?  @map("converted_to_order_id")
+  convertedToOrder   Order? @relation(fields: [convertedToOrderId], references: [id], onDelete: SetNull)
+  
+  customerName    String? @map("customer_name") @db.VarChar(100)
+  customerEmail   String? @map("customer_email") @db.VarChar(100)
+  customerPhone   String? @map("customer_phone") @db.VarChar(50)
+  customerAddress String? @map("customer_address") @db.Text
+  
+  notes           String? @db.Text
+  items         QuotationItem[]
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([convertedToOrderId])
+  @@map("quotations")
+}
+
+enum QuotationStatus {
+  DRAFT
+  CONVERTED
+}
+
+model QuotationItem {
+  id              Int      @id @default(autoincrement())
+  quotationId     Int      @map("quotation_id")
+  
+  productId       Int?     @map("product_id")
+  variantId       Int?     @map("variant_id")
+  customName      String?  @map("custom_name") @db.VarChar(100)
+  
+  quantity        Int
+  unitPrice       Decimal  @map("unit_price") @db.Decimal(10, 2)
+  lineTotal       Decimal  @map("line_total") @db.Decimal(10, 2)
+  
+  location        String?  @db.VarChar(100)
+  size            String?  @db.VarChar(50)
+  jamb            String?  @db.VarChar(100)
+  jambCustom      String?  @map("jamb_custom") @db.VarChar(100)
+  hingeCustom     String?  @map("hinge_custom") @db.VarChar(100)
+  leftHand        Int?     @map("left_hand") @default(0)
+  rightHand       Int?     @map("right_hand") @default(0)
+  description     String?  @db.Text
+  
+  jambProductId   Int?     @map("jamb_product_id")
+  jambQuantity    Int?     @map("jamb_quantity") @default(0)
+  hingeProductId  Int?     @map("hinge_product_id")
+  hingeQuantity   Int?     @map("hinge_quantity") @default(0)
+
+  quotation       Quotation       @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  product         Product?        @relation("MainProduct", fields: [productId], references: [id], onDelete: SetNull)
+  variant         ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  jambProduct     Product?        @relation("JambProduct", fields: [jambProductId], references: [id], onDelete: SetNull)
+  hingeProduct    Product?        @relation("HingeProduct", fields: [hingeProductId], references: [id], onDelete: SetNull)
+
+  @@index([quotationId])
+  @@index([productId])
+  @@index([variantId])
+  @@index([jambProductId])
+  @@index([hingeProductId])
+  @@map("quotation_items")
+}

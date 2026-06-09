@@ -1,16 +1,24 @@
-const Category = require('../models/Category');
+const prisma = require('../config/prisma');
 
 // @desc    Get all categories
 // @route   GET /api/categories
 // @access  Protected
 const getCategories = async (req, res, next) => {
   try {
-    const categories = await Category.find().sort({ createdAt: -1 }).lean();
+    const categories = await prisma.category.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Map Prisma id to Mongoose _id for frontend compatibility
+    const formattedCategories = categories.map((cat) => ({
+      ...cat,
+      _id: cat.id,
+    }));
 
     res.json({
       success: true,
-      count: categories.length,
-      data: categories,
+      count: formattedCategories.length,
+      data: formattedCategories,
     });
   } catch (error) {
     next(error);
@@ -22,7 +30,9 @@ const getCategories = async (req, res, next) => {
 // @access  Protected
 const getCategory = async (req, res, next) => {
   try {
-    const category = await Category.findById(req.params.id);
+    const category = await prisma.category.findUnique({
+      where: { id: Number(req.params.id) },
+    });
 
     if (!category) {
       return res.status(404).json({
@@ -30,6 +40,9 @@ const getCategory = async (req, res, next) => {
         message: 'Category not found',
       });
     }
+
+    // Map Prisma id to Mongoose _id for frontend compatibility
+    category._id = category.id;
 
     res.json({
       success: true,
@@ -55,10 +68,11 @@ const createCategory = async (req, res, next) => {
       });
     }
 
-    // Check for duplicate name (case-insensitive)
-    const existing = await Category.findOne({
-      name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
+    // Check for duplicate name (MySQL default collation is case-insensitive)
+    const existing = await prisma.category.findFirst({
+      where: { name: name.trim() },
     });
+    
     if (existing) {
       return res.status(400).json({
         success: false,
@@ -66,10 +80,15 @@ const createCategory = async (req, res, next) => {
       });
     }
 
-    const category = await Category.create({
-      name: name.trim(),
-      description: description?.trim() || '',
+    const category = await prisma.category.create({
+      data: {
+        name: name.trim(),
+        description: description?.trim() || '',
+      },
     });
+
+    // Map Prisma id to Mongoose _id for frontend compatibility
+    category._id = category.id;
 
     res.status(201).json({
       success: true,
@@ -97,8 +116,11 @@ const updateCategory = async (req, res, next) => {
     }
 
     // Check category exists
-    const category = await Category.findById(req.params.id);
-    if (!category) {
+    const categoryExists = await prisma.category.findUnique({
+      where: { id: Number(req.params.id) },
+    });
+    
+    if (!categoryExists) {
       return res.status(404).json({
         success: false,
         message: 'Category not found',
@@ -106,20 +128,30 @@ const updateCategory = async (req, res, next) => {
     }
 
     // Check for duplicate name (exclude current category)
-    const existing = await Category.findOne({
-      name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
-      _id: { $ne: req.params.id },
+    const duplicate = await prisma.category.findFirst({
+      where: {
+        name: name.trim(),
+        id: { not: Number(req.params.id) },
+      },
     });
-    if (existing) {
+    
+    if (duplicate) {
       return res.status(400).json({
         success: false,
         message: 'A category with this name already exists',
       });
     }
 
-    category.name = name.trim();
-    category.description = description?.trim() || '';
-    await category.save();
+    const category = await prisma.category.update({
+      where: { id: Number(req.params.id) },
+      data: {
+        name: name.trim(),
+        description: description?.trim() || '',
+      },
+    });
+
+    // Map Prisma id to Mongoose _id for frontend compatibility
+    category._id = category.id;
 
     res.json({
       success: true,
@@ -136,7 +168,9 @@ const updateCategory = async (req, res, next) => {
 // @access  Protected
 const deleteCategory = async (req, res, next) => {
   try {
-    const category = await Category.findById(req.params.id);
+    const category = await prisma.category.findUnique({
+      where: { id: Number(req.params.id) },
+    });
 
     if (!category) {
       return res.status(404).json({
@@ -145,24 +179,44 @@ const deleteCategory = async (req, res, next) => {
       });
     }
 
-    // Check if any products are using this category
+    // Check if any products are using this category (Hybrid Mode check)
     let Product;
     try {
       Product = require('../models/Product');
-      const productCount = await Product.countDocuments({
-        category: req.params.id,
-      });
-      if (productCount > 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Cannot delete — ${productCount} product(s) are using this category`,
+      
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(req.params.id));
+      if (isObjectId) {
+        const productCount = await Product.countDocuments({
+          category: req.params.id,
         });
+        if (productCount > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot delete — ${productCount} product(s) are using this category`,
+          });
+        }
+      } else {
+        try {
+          const productCount = await Product.countDocuments({
+            category: req.params.id,
+          });
+          if (productCount > 0) {
+            return res.status(400).json({
+              success: false,
+              message: `Cannot delete — ${productCount} product(s) are using this category`,
+            });
+          }
+        } catch (innerError) {
+           // Safely ignore Mongoose CastError. A MySQL integer ID cannot be referenced by a Mongo Product ObjectId.
+        }
       }
-    } catch {
+    } catch (e) {
       // Product model may not be fully wired yet — allow delete
     }
 
-    await Category.findByIdAndDelete(req.params.id);
+    await prisma.category.delete({
+      where: { id: Number(req.params.id) },
+    });
 
     res.json({
       success: true,

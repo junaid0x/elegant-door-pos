@@ -14,12 +14,10 @@ const ProductModal = ({
     name: '',
     sku: '',
     barcode: '',
-    sizes: [],
     category: '',
-    quantity: 0,
-    price: 0,
     lowStockThreshold: 5,
     description: '',
+    variants: [{ size: '', price: '', quantity: '' }],
     bundles: [],
   });
   const [errors, setErrors] = useState({});
@@ -35,12 +33,16 @@ const ProductModal = ({
           name: product.name || '',
           sku: product.sku || '',
           barcode: product.barcode || '',
-          sizes: product.sizes || [],
           category: product.category?._id || product.category || '',
-          quantity: product.quantity || 0,
-          price: product.price || 0,
           lowStockThreshold: product.lowStockThreshold || 5,
           description: product.description || '',
+          variants: product.variants && product.variants.length > 0
+            ? product.variants.map(v => ({
+                size: v.size || '',
+                price: v.price !== null ? v.price : '',
+                quantity: v.quantity !== null ? v.quantity : '',
+              }))
+            : [{ size: '', price: '', quantity: '' }],
           bundles: product.bundles ? product.bundles.map(b => ({
             product: b.product?._id || b.product,
             quantity: b.quantity
@@ -51,12 +53,10 @@ const ProductModal = ({
           name: '',
           sku: '',
           barcode: '',
-          sizes: [],
           category: '',
-          quantity: 0,
-          price: 0,
           lowStockThreshold: 5,
           description: '',
+          variants: [{ size: '', price: '', quantity: '' }],
           bundles: [],
         });
       }
@@ -85,12 +85,17 @@ const ProductModal = ({
       newErrors.category = 'Category is required';
     }
 
-    if (formData.quantity === '' || formData.quantity < 0) {
-      newErrors.quantity = 'Valid quantity is required';
-    }
-
-    if (formData.price === '' || formData.price < 0) {
-      newErrors.price = 'Valid price is required';
+    if (!formData.variants || formData.variants.length === 0) {
+      newErrors.variants = 'At least one variant is required';
+    } else {
+      formData.variants.forEach((v, index) => {
+        if (v.price === '' || v.price < 0) {
+          newErrors[`variant_${index}_price`] = 'Valid price required';
+        }
+        if (v.quantity === '' || v.quantity < 0) {
+          newErrors[`variant_${index}_quantity`] = 'Valid quantity required';
+        }
+      });
     }
 
     if (formData.lowStockThreshold === '' || formData.lowStockThreshold < 0) {
@@ -144,26 +149,36 @@ const ProductModal = ({
     });
   };
 
-  const handleAddSize = () => {
+  const handleAddVariant = () => {
     setFormData((prev) => ({
       ...prev,
-      sizes: [...prev.sizes, ''],
+      variants: [...prev.variants, { size: '', price: '', quantity: '' }],
     }));
   };
 
-  const handleRemoveSize = (index) => {
+  const handleRemoveVariant = (index) => {
+    if (formData.variants.length === 1) return; // Must have at least one
     setFormData((prev) => ({
       ...prev,
-      sizes: prev.sizes.filter((_, i) => i !== index),
+      variants: prev.variants.filter((_, i) => i !== index),
     }));
   };
 
-  const handleSizeChange = (index, value) => {
+  const handleVariantChange = (index, field, value) => {
     setFormData((prev) => {
-      const newSizes = [...prev.sizes];
-      newSizes[index] = value;
-      return { ...prev, sizes: newSizes };
+      const newVariants = [...prev.variants];
+      let parsedValue = value;
+      if (field === 'price' || field === 'quantity') {
+        parsedValue = value === '' ? '' : Number(value);
+      }
+      newVariants[index] = { ...newVariants[index], [field]: parsedValue };
+      return { ...prev, variants: newVariants };
     });
+    // Clear dynamic error
+    const errKey = `variant_${index}_${field}`;
+    if (errors[errKey]) {
+      setErrors((prev) => ({ ...prev, [errKey]: '' }));
+    }
   };
 
   const handleSubmit = (e) => {
@@ -295,45 +310,72 @@ const ProductModal = ({
                   />
                 </div>
 
-                {/* Sizes Field */}
+                {/* Variants Field */}
                 <div className="col-span-1 md:col-span-2 border-t border-gray-100 pt-4">
                   <div className="flex items-center justify-between mb-3">
                     <label className="block text-sm font-medium text-gray-700">
-                      Product Sizes
+                      Product Variants <span className="text-red-400">*</span>
                     </label>
                     <button
                       type="button"
-                      onClick={handleAddSize}
+                      onClick={handleAddVariant}
                       className="text-sm text-brand-600 hover:text-brand-700 font-medium"
                     >
-                      + Add Size
+                      + Add Variant
                     </button>
                   </div>
-                  {formData.sizes.length === 0 ? (
-                    <p className="text-sm text-gray-400 italic">No predefined sizes. (Can still be entered manually on orders)</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {formData.sizes.map((size, index) => (
-                        <div key={index} className="flex items-center gap-3">
+                  {errors.variants && (
+                    <p className="mt-1 mb-2 text-sm text-red-500">{errors.variants}</p>
+                  )}
+                  <div className="space-y-3">
+                    {formData.variants.map((variant, index) => (
+                      <div key={index} className="flex flex-col md:flex-row items-start md:items-center gap-3 bg-gray-50/50 p-3 rounded-lg border border-gray-100">
+                        <div className="flex-1 w-full">
                           <input
                             type="text"
-                            value={size}
-                            onChange={(e) => handleSizeChange(index, e.target.value)}
-                            placeholder="e.g. 3.0x7.6x1-3/4"
-                            className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-400/50 focus:border-brand-400/50 transition-all text-sm"
+                            value={variant.size}
+                            onChange={(e) => handleVariantChange(index, 'size', e.target.value)}
+                            placeholder="Size (e.g. 3.0x7.6)"
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-400/50 text-sm"
+                          />
+                        </div>
+                        <div className="w-full md:w-32">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={variant.price}
+                            onChange={(e) => handleVariantChange(index, 'price', e.target.value)}
+                            placeholder="Price"
+                            className={`w-full px-3 py-2 border rounded-lg text-gray-800 focus:outline-none focus:ring-2 text-sm ${
+                              errors[`variant_${index}_price`] ? 'border-red-300 focus:ring-red-400/50' : 'border-gray-200 focus:ring-brand-400/50'
+                            }`}
+                          />
+                        </div>
+                        <div className="w-full md:w-28 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            value={variant.quantity}
+                            onChange={(e) => handleVariantChange(index, 'quantity', e.target.value)}
+                            placeholder="Qty"
+                            className={`w-full px-3 py-2 border rounded-lg text-gray-800 focus:outline-none focus:ring-2 text-sm ${
+                              errors[`variant_${index}_quantity`] ? 'border-red-300 focus:ring-red-400/50' : 'border-gray-200 focus:ring-brand-400/50'
+                            }`}
                           />
                           <button
                             type="button"
-                            onClick={() => handleRemoveSize(index)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-                            title="Remove size"
+                            onClick={() => handleRemoveVariant(index)}
+                            disabled={formData.variants.length === 1}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                            title="Remove variant"
                           >
                             <HiOutlineX className="w-5 h-5" />
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Category Field */}
@@ -371,68 +413,7 @@ const ProductModal = ({
                   )}
                 </div>
 
-                {/* Price Field */}
-                <div>
-                  <label
-                    htmlFor="product-price"
-                    className="block text-sm font-medium text-gray-700 mb-1.5"
-                  >
-                    Price <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    id="product-price"
-                    name="price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={handleChange}
-                    placeholder="0.00"
-                    className={`
-                      w-full px-3 py-2.5 border rounded-lg text-gray-800
-                      placeholder-gray-400 focus:outline-none focus:ring-2 transition-all text-sm
-                      ${
-                        errors.price
-                          ? 'border-red-300 focus:ring-red-400/50'
-                          : 'border-gray-200 focus:ring-brand-400/50 focus:border-brand-400/50'
-                      }
-                    `}
-                  />
-                  {errors.price && (
-                    <p className="mt-1 text-sm text-red-500">{errors.price}</p>
-                  )}
-                </div>
-
-                {/* Quantity Field */}
-                <div>
-                  <label
-                    htmlFor="product-quantity"
-                    className="block text-sm font-medium text-gray-700 mb-1.5"
-                  >
-                    Quantity <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    id="product-quantity"
-                    name="quantity"
-                    type="number"
-                    min="0"
-                    value={formData.quantity}
-                    onChange={handleChange}
-                    placeholder="0"
-                    className={`
-                      w-full px-3 py-2.5 border rounded-lg text-gray-800
-                      placeholder-gray-400 focus:outline-none focus:ring-2 transition-all text-sm
-                      ${
-                        errors.quantity
-                          ? 'border-red-300 focus:ring-red-400/50'
-                          : 'border-gray-200 focus:ring-brand-400/50 focus:border-brand-400/50'
-                      }
-                    `}
-                  />
-                  {errors.quantity && (
-                    <p className="mt-1 text-sm text-red-500">{errors.quantity}</p>
-                  )}
-                </div>
+                {/* Price and Quantity are now handled in Variants */}
 
                 {/* Low Stock Threshold Field */}
                 <div className="col-span-1 md:col-span-2">

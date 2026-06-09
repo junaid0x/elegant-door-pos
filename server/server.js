@@ -41,10 +41,8 @@ app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/quotations', require('./routes/quotationRoutes'));
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'POS API is running' });
-});
+// Health routes
+app.use('/api/health', require('./routes/healthRoutes'));
 
 // Error handling middleware
 app.use(require('./middleware/errorHandler'));
