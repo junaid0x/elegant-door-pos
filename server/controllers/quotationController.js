@@ -380,9 +380,7 @@ const convertToOrder = async (req, res) => {
     const quotation = await prisma.quotation.findUnique({
       where: { id: quotationId },
       include: {
-        items: {
-          include: { product: true }
-        }
+        items: true
       }
     });
 
@@ -394,26 +392,31 @@ const convertToOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Quotation has already been converted to an order' });
     }
 
-    // HYBRID MODE BRIDGE:
-    // Orders are still in MongoDB. Mongoose expects `product` to be a 24-character ObjectId.
-    // If we pass an integer Prisma ID, Mongoose throws a CastError and crashes the conversion.
-    // Solution: Temporarily convert the items to "custom items" to bypass Mongoose ID validation
-    // and bypass Mongoose stock deduction (since the Prisma products don't exist in Mongo anyway).
-    
+    // Convert Quotation directly to Prisma Order payload
     req.body = {
       orderNumber: `ORD-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`,
       items: quotation.items.map(item => ({
-        // We INTENTIONALLY omit `product: item.productId` to avoid Mongoose CastErrors
-        customName: item.product ? `${item.product.name} (Prisma ID: ${item.productId})` : (item.customName || 'Legacy Converted Item'),
+        productId: item.productId,
+        product: item.productId,
+        variantId: item.variantId,
+        customName: item.customName,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         lineTotal: item.lineTotal,
         location: item.location,
         size: item.size,
         jamb: item.jamb,
+        jambCustom: item.jambCustom,
+        hingeCustom: item.hingeCustom,
         leftHand: item.leftHand,
         rightHand: item.rightHand,
         description: item.description,
+        jambProductId: item.jambProductId,
+        jambProduct: item.jambProductId,
+        jambQuantity: item.jambQuantity,
+        hingeProductId: item.hingeProductId,
+        hingeProduct: item.hingeProductId,
+        hingeQuantity: item.hingeQuantity
       })),
       subtotal: quotation.subtotal,
       tax: quotation.tax,
@@ -422,7 +425,7 @@ const convertToOrder = async (req, res) => {
       delivery: quotation.delivery,
       discount: quotation.discount,
       total: quotation.total,
-      status: 'draft', // Force draft to definitively skip Mongo inventory deductions
+      status: 'IN_PROCESSED', // Immediately active to trigger standard inventory deduction
       customerInfo: {
         name: quotation.customerName,
         email: quotation.customerEmail,
@@ -459,10 +462,13 @@ const convertToOrder = async (req, res) => {
       return res.status(orderStatusCode).json(orderError);
     }
     
-    // If successful, mark Prisma quotation as converted
+    // If successful, link them!
     await prisma.quotation.update({
       where: { id: quotationId },
-      data: { status: 'CONVERTED' } // We cannot store the Mongo ObjectId in convertedToOrderId since it's an Int constraint
+      data: { 
+        status: 'CONVERTED',
+        convertedToOrderId: orderData.data.id
+      } 
     });
     
     res.status(200).json({

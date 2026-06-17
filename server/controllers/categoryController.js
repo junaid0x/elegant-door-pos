@@ -168,8 +168,9 @@ const updateCategory = async (req, res, next) => {
 // @access  Protected
 const deleteCategory = async (req, res, next) => {
   try {
+    const id = Number(req.params.id);
     const category = await prisma.category.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id },
     });
 
     if (!category) {
@@ -179,43 +180,20 @@ const deleteCategory = async (req, res, next) => {
       });
     }
 
-    // Check if any products are using this category (Hybrid Mode check)
-    let Product;
-    try {
-      Product = require('../models/Product');
-      
-      const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(req.params.id));
-      if (isObjectId) {
-        const productCount = await Product.countDocuments({
-          category: req.params.id,
-        });
-        if (productCount > 0) {
-          return res.status(400).json({
-            success: false,
-            message: `Cannot delete — ${productCount} product(s) are using this category`,
-          });
-        }
-      } else {
-        try {
-          const productCount = await Product.countDocuments({
-            category: req.params.id,
-          });
-          if (productCount > 0) {
-            return res.status(400).json({
-              success: false,
-              message: `Cannot delete — ${productCount} product(s) are using this category`,
-            });
-          }
-        } catch (innerError) {
-           // Safely ignore Mongoose CastError. A MySQL integer ID cannot be referenced by a Mongo Product ObjectId.
-        }
-      }
-    } catch (e) {
-      // Product model may not be fully wired yet — allow delete
+    // Check if category has associated products in Prisma
+    const productsCount = await prisma.product.count({
+      where: { categoryId: id },
+    });
+
+    if (productsCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete category. It has ${productsCount} associated products.`,
+      });
     }
 
     await prisma.category.delete({
-      where: { id: Number(req.params.id) },
+      where: { id },
     });
 
     res.json({

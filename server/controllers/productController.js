@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const mongoose = require('mongoose');
+// mongoose removed
 
 // Helper to map Prisma Product to frontend-compatible legacy shape
 const mapProductForFrontend = (p) => {
@@ -341,19 +341,16 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    // Hybrid Mode: Protect against deleting a product that is currently in a Mongo order
-    const Order = require('../models/Order');
-    try {
-      const isProductInOrders = await Order.exists({ 'items.product': id });
-      if (isProductInOrders) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot delete product: it is currently referenced in existing orders.',
-        });
-      }
-    } catch (err) {
-      // Safe to swallow. Mongoose throws CastError when `id` is a number instead of ObjectId.
-      // This means the product is definitely not in the legacy MongoDB.
+    // Protect against deleting a product that is currently referenced in orders
+    const orderItemsCount = await prisma.orderItem.count({
+      where: { productId: id }
+    });
+
+    if (orderItemsCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete product: it is currently referenced in existing orders.',
+      });
     }
 
     // Deleting the product will Cascade delete Variants and Bundles based on schema.prisma
