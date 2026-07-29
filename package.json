@@ -1,4 +1,11 @@
 {
+  "name": "elegant-doors-pos",
+  "version": "1.0.0",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "start:server": "cd server && npm start"
+  },
   "devDependencies": {
     "prisma": "^7.8.0"
   },
