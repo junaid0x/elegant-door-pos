@@ -6,34 +6,33 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Seeding authentication data...');
 
-  const email = 'admin@elegantdoors.ca';
-  const password = 'Password123!';
-  
-  const existingAdmin = await prisma.user.findUnique({
-    where: { email }
-  });
+  const accounts = [
+    { email: 'admin@elegantdoors.com', password: 'admin123', name: 'System Admin', role: 'SUPER_ADMIN' },
+    { email: 'admin@elegantdoors.ca', password: 'Password123!', name: 'System Admin CA', role: 'SUPER_ADMIN' }
+  ];
 
-  if (existingAdmin) {
-    console.log('Admin account already exists.');
-    return;
+  for (const account of accounts) {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(account.password, salt);
+
+    const user = await prisma.user.upsert({
+      where: { email: account.email },
+      update: {
+        password: hashedPassword,
+        isActive: true,
+        role: account.role,
+      },
+      create: {
+        name: account.name,
+        email: account.email,
+        password: hashedPassword,
+        role: account.role,
+        isActive: true,
+      },
+    });
+
+    console.log(`User ${user.email} seeded successfully with role ${user.role}!`);
   }
-
-  const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(password, salt);
-
-  const admin = await prisma.user.create({
-    data: {
-      name: 'System Admin',
-      email: email,
-      password: hashedPassword,
-      role: 'SUPER_ADMIN',
-      isActive: true,
-    }
-  });
-
-  console.log(`Admin created successfully!`);
-  console.log(`Email: ${admin.email}`);
-  console.log(`Password: ${password}`);
 }
 
 main()
