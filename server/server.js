@@ -2,13 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
-const connectDB = require('./config/db');
-
 // Load env vars
 dotenv.config();
-
-// Connect to database
-connectDB();
 
 const app = express();
 
@@ -19,10 +14,14 @@ app.use(cors({
     if (!origin) return callback(null, true);
     const allowedOrigins = [
       'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://localhost:5174',
+      'http://127.0.0.1:5174',
+      'http://localhost:3000',
       'https://elegant-door-pos.vercel.app',
       'http://elegant-door-pos.vercel.app'
     ];
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin) || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
@@ -41,10 +40,8 @@ app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/quotations', require('./routes/quotationRoutes'));
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'POS API is running' });
-});
+// Health routes
+app.use('/api/health', require('./routes/healthRoutes'));
 
 // Error handling middleware
 app.use(require('./middleware/errorHandler'));

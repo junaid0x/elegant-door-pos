@@ -1,28 +1,91 @@
-const Quotation = require('../models/Quotation');
-const Order = require('../models/Order');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+// Helper to map Prisma Quotation to frontend-compatible legacy shape
+const mapQuotationForFrontend = (q) => {
+  if (!q) return null;
+  return {
+    ...q,
+    _id: q.id,
+    quotationNumber: q.quotationNum,
+    convertedToOrder: q.convertedToOrderId ? { orderNumber: 'Legacy-Mongo-Order' } : null,
+    customerInfo: {
+      name: q.customerName || '',
+      email: q.customerEmail || '',
+      phone: q.customerPhone || '',
+      address: q.customerAddress || ''
+    },
+    items: q.items ? q.items.map(item => ({
+      ...item,
+      _id: item.id,
+      product: item.product ? { 
+        ...item.product, 
+        _id: item.product.id,
+        bundles: item.product.bundlesAsParent ? item.product.bundlesAsParent.map(b => ({
+          product: b.childProduct ? { ...b.childProduct, _id: b.childProduct.id } : null,
+          quantity: b.quantity
+        })) : []
+      } : null,
+      jambProduct: item.jambProduct ? { ...item.jambProduct, _id: item.jambProduct.id } : null,
+      hingeProduct: item.hingeProduct ? { ...item.hingeProduct, _id: item.hingeProduct.id } : null
+    })) : []
+  };
+};
+
+const resolveVariant = async (productId, size) => {
+  if (!productId) return null;
+  const pId = parseInt(productId);
+  if (isNaN(pId)) return null;
+
+  // We find the variant that strictly matches the provided size, or falls back to size: null
+  let variant = await prisma.productVariant.findFirst({
+    where: { 
+      productId: pId,
+      size: size ? size.trim() : null
+    }
+  });
+
+  // If a specific size was requested but not found, check if a generic sizeless variant exists
+  if (!variant && size) {
+    variant = await prisma.productVariant.findFirst({
+      where: { productId: pId, size: null }
+    });
+  }
+
+  return variant ? variant.id : null;
+};
 
 // @desc    Get all quotations
 // @route   GET /api/quotations
 // @access  Private
 const getQuotations = async (req, res) => {
   try {
-    const quotations = await Quotation.find()
-      .populate({
-        path: 'items.product',
-        select: 'name sku barcode bundles',
-        populate: {
-          path: 'bundles.product',
-          select: 'name sku'
+    const quotations = await prisma.quotation.findMany({
+      include: {
+        items: {
+          include: {
+            product: {
+              include: {
+                bundlesAsParent: {
+                  include: { childProduct: true }
+                }
+              }
+            },
+            variant: true,
+            jambProduct: true,
+            hingeProduct: true
+          }
         }
-      })
-      .populate('convertedToOrder', 'orderNumber')
-      .sort({ createdAt: -1 })
-      .lean();
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const mappedData = quotations.map(mapQuotationForFrontend);
 
     res.status(200).json({
       success: true,
-      count: quotations.length,
-      data: quotations,
+      count: mappedData.length,
+      data: mappedData,
     });
   } catch (error) {
     res.status(500).json({
@@ -38,16 +101,30 @@ const getQuotations = async (req, res) => {
 // @access  Private
 const getQuotation = async (req, res) => {
   try {
-    const quotation = await Quotation.findById(req.params.id)
-      .populate({
-        path: 'items.product',
-        select: 'name sku barcode bundles',
-        populate: {
-          path: 'bundles.product',
-          select: 'name sku'
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid quotation ID format' });
+    }
+
+    const quotation = await prisma.quotation.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            product: {
+              include: {
+                bundlesAsParent: {
+                  include: { childProduct: true }
+                }
+              }
+            },
+            variant: true,
+            jambProduct: true,
+            hingeProduct: true
+          }
         }
-      })
-      .populate('convertedToOrder', 'orderNumber');
+      }
+    });
 
     if (!quotation) {
       return res.status(404).json({
@@ -58,7 +135,7 @@ const getQuotation = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: quotation,
+      data: mapQuotationForFrontend(quotation),
     });
   } catch (error) {
     res.status(500).json({
@@ -74,14 +151,9 @@ const getQuotation = async (req, res) => {
 // @access  Private
 const createQuotation = async (req, res) => {
   try {
-    const { items } = req.body;
+    const { items, quotationNumber, subtotal, tax, gst, pst, delivery, discount, total, customerInfo, notes } = req.body;
 
-    // Generate Quotation Number if not provided
-    if (!req.body.quotationNumber) {
-      req.body.quotationNumber = `QUT-${Date.now().toString().slice(-6)}-${Math.floor(
-        Math.random() * 1000
-      )}`;
-    }
+    const qNum = quotationNumber || `QUT-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`;
 
     if (!items || items.length === 0) {
       return res.status(400).json({
@@ -90,20 +162,69 @@ const createQuotation = async (req, res) => {
       });
     }
 
-    const quotation = await Quotation.create(req.body);
-    const populatedQuotation = await Quotation.findById(quotation._id).populate({
-      path: 'items.product',
-      select: 'name sku barcode bundles',
-      populate: {
-        path: 'bundles.product',
-        select: 'name sku'
+    // Resolve all variants asynchronously
+    const resolvedItems = await Promise.all(items.map(async (item) => {
+      const variantId = await resolveVariant(item.product, item.size);
+      const jambVariantId = await resolveVariant(item.jambProduct, null);
+      const hingeVariantId = await resolveVariant(item.hingeProduct, null);
+
+      return {
+        productId: item.product ? parseInt(item.product) : null,
+        variantId: variantId,
+        customName: item.customName || null,
+        quantity: parseInt(item.quantity) || 1,
+        unitPrice: parseFloat(item.unitPrice) || 0,
+        lineTotal: parseFloat(item.lineTotal) || 0,
+        location: item.location || null,
+        size: item.size || null,
+        jamb: item.jamb || null,
+        jambCustom: item.jambCustom || null,
+        hingeCustom: item.hingeCustom || null,
+        leftHand: parseInt(item.leftHand) || 0,
+        rightHand: parseInt(item.rightHand) || 0,
+        description: item.description || null,
+        jambProductId: item.jambProduct ? parseInt(item.jambProduct) : null,
+        jambQuantity: parseInt(item.jambQuantity) || 0,
+        hingeProductId: item.hingeProduct ? parseInt(item.hingeProduct) : null,
+        hingeQuantity: parseInt(item.hingeQuantity) || 0
+      };
+    }));
+
+    const quotation = await prisma.quotation.create({
+      data: {
+        quotationNum: qNum,
+        subtotal: parseFloat(subtotal) || 0,
+        tax: parseFloat(tax) || 0,
+        gst: parseFloat(gst) || 0,
+        pst: parseFloat(pst) || 0,
+        delivery: parseFloat(delivery) || 0,
+        discount: parseFloat(discount) || 0,
+        total: parseFloat(total) || 0,
+        customerName: customerInfo?.name || null,
+        customerEmail: customerInfo?.email || null,
+        customerPhone: customerInfo?.phone || null,
+        customerAddress: customerInfo?.address || null,
+        notes: notes || null,
+        items: {
+          create: resolvedItems
+        }
+      },
+      include: {
+        items: {
+          include: {
+            product: { include: { bundlesAsParent: { include: { childProduct: true } } } },
+            variant: true,
+            jambProduct: true,
+            hingeProduct: true
+          }
+        }
       }
     });
 
     res.status(201).json({
       success: true,
       message: 'Quotation created successfully',
-      data: populatedQuotation,
+      data: mapQuotationForFrontend(quotation),
     });
   } catch (error) {
     res.status(500).json({
@@ -119,39 +240,88 @@ const createQuotation = async (req, res) => {
 // @access  Private
 const updateQuotation = async (req, res) => {
   try {
-    const quotationId = req.params.id;
-    let quotation = await Quotation.findById(quotationId);
-
-    if (!quotation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Quotation not found',
-      });
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid quotation ID format' });
     }
 
-    if (quotation.status === 'converted') {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot edit a converted quotation',
-      });
+    const { items, subtotal, tax, gst, pst, delivery, discount, total, customerInfo, notes } = req.body;
+
+    const existing = await prisma.quotation.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Quotation not found' });
     }
 
-    quotation = await Quotation.findByIdAndUpdate(quotationId, req.body, {
-      new: true,
-      runValidators: true,
-    }).populate({
-      path: 'items.product',
-      select: 'name sku barcode bundles',
-      populate: {
-        path: 'bundles.product',
-        select: 'name sku'
-      }
+    if (existing.status === 'CONVERTED') {
+      return res.status(400).json({ success: false, message: 'Cannot edit a converted quotation' });
+    }
+
+    // Resolve all variants
+    const resolvedItems = await Promise.all((items || []).map(async (item) => {
+      const variantId = await resolveVariant(item.product, item.size);
+      return {
+        productId: item.product ? parseInt(item.product) : null,
+        variantId: variantId,
+        customName: item.customName || null,
+        quantity: parseInt(item.quantity) || 1,
+        unitPrice: parseFloat(item.unitPrice) || 0,
+        lineTotal: parseFloat(item.lineTotal) || 0,
+        location: item.location || null,
+        size: item.size || null,
+        jamb: item.jamb || null,
+        jambCustom: item.jambCustom || null,
+        hingeCustom: item.hingeCustom || null,
+        leftHand: parseInt(item.leftHand) || 0,
+        rightHand: parseInt(item.rightHand) || 0,
+        description: item.description || null,
+        jambProductId: item.jambProduct ? parseInt(item.jambProduct) : null,
+        jambQuantity: parseInt(item.jambQuantity) || 0,
+        hingeProductId: item.hingeProduct ? parseInt(item.hingeProduct) : null,
+        hingeQuantity: parseInt(item.hingeQuantity) || 0
+      };
+    }));
+
+    const quotation = await prisma.$transaction(async (tx) => {
+      // Flush old items
+      await tx.quotationItem.deleteMany({ where: { quotationId: id } });
+
+      // Update parent and recreate items
+      return await tx.quotation.update({
+        where: { id },
+        data: {
+          subtotal: parseFloat(subtotal) || existing.subtotal,
+          tax: parseFloat(tax) || existing.tax,
+          gst: parseFloat(gst) || existing.gst,
+          pst: parseFloat(pst) || existing.pst,
+          delivery: parseFloat(delivery) || existing.delivery,
+          discount: parseFloat(discount) || existing.discount,
+          total: parseFloat(total) || existing.total,
+          customerName: customerInfo?.name !== undefined ? customerInfo.name : existing.customerName,
+          customerEmail: customerInfo?.email !== undefined ? customerInfo.email : existing.customerEmail,
+          customerPhone: customerInfo?.phone !== undefined ? customerInfo.phone : existing.customerPhone,
+          customerAddress: customerInfo?.address !== undefined ? customerInfo.address : existing.customerAddress,
+          notes: notes !== undefined ? notes : existing.notes,
+          items: {
+            create: resolvedItems
+          }
+        },
+        include: {
+          items: {
+            include: {
+              product: { include: { bundlesAsParent: { include: { childProduct: true } } } },
+              variant: true,
+              jambProduct: true,
+              hingeProduct: true
+            }
+          }
+        }
+      });
     });
 
     res.status(200).json({
       success: true,
       message: 'Quotation updated successfully',
-      data: quotation,
+      data: mapQuotationForFrontend(quotation),
     });
   } catch (error) {
     res.status(500).json({
@@ -167,7 +337,12 @@ const updateQuotation = async (req, res) => {
 // @access  Private
 const deleteQuotation = async (req, res) => {
   try {
-    const quotation = await Quotation.findById(req.params.id);
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid quotation ID format' });
+    }
+
+    const quotation = await prisma.quotation.findUnique({ where: { id } });
 
     if (!quotation) {
       return res.status(404).json({
@@ -176,7 +351,7 @@ const deleteQuotation = async (req, res) => {
       });
     }
 
-    await Quotation.findByIdAndDelete(req.params.id);
+    await prisma.quotation.delete({ where: { id } });
 
     res.status(200).json({
       success: true,
@@ -197,35 +372,33 @@ const deleteQuotation = async (req, res) => {
 // @access  Private
 const convertToOrder = async (req, res) => {
   try {
-    const quotationId = req.params.id;
-    const quotation = await Quotation.findById(quotationId);
+    const quotationId = parseInt(req.params.id);
+    if (isNaN(quotationId)) {
+      return res.status(400).json({ success: false, message: 'Invalid quotation ID format' });
+    }
+
+    const quotation = await prisma.quotation.findUnique({
+      where: { id: quotationId },
+      include: {
+        items: true
+      }
+    });
 
     if (!quotation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Quotation not found',
-      });
+      return res.status(404).json({ success: false, message: 'Quotation not found' });
     }
 
-    if (quotation.status === 'converted') {
-      return res.status(400).json({
-        success: false,
-        message: 'Quotation has already been converted to an order',
-      });
+    if (quotation.status === 'CONVERTED') {
+      return res.status(400).json({ success: false, message: 'Quotation has already been converted to an order' });
     }
 
-    // Call order creation logic by passing it to orderController's createOrder
-    // Since createOrder expects req and res, we will mock them or call orderController directly if it was decoupled.
-    // However, it's safer to just duplicate the necessary order creation logic here using the internal helpers if needed,
-    // OR we can make an internal HTTP call, OR we can decouple createOrder logic.
-    // Decoupling `deductStock` and `validateStockLevels` is not easily exported. We can just require orderController.
-    // Wait, let's just assemble the body and pass it to orderController.createOrder.
-    
-    // Assemble order body
+    // Convert Quotation directly to Prisma Order payload
     req.body = {
       orderNumber: `ORD-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`,
       items: quotation.items.map(item => ({
-        product: item.product,
+        productId: item.productId,
+        product: item.productId,
+        variantId: item.variantId,
         customName: item.customName,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -233,26 +406,37 @@ const convertToOrder = async (req, res) => {
         location: item.location,
         size: item.size,
         jamb: item.jamb,
+        jambCustom: item.jambCustom,
+        hingeCustom: item.hingeCustom,
         leftHand: item.leftHand,
         rightHand: item.rightHand,
         description: item.description,
+        jambProductId: item.jambProductId,
+        jambProduct: item.jambProductId,
+        jambQuantity: item.jambQuantity,
+        hingeProductId: item.hingeProductId,
+        hingeProduct: item.hingeProductId,
+        hingeQuantity: item.hingeQuantity
       })),
       subtotal: quotation.subtotal,
       tax: quotation.tax,
+      gst: quotation.gst,
+      pst: quotation.pst,
+      delivery: quotation.delivery,
+      discount: quotation.discount,
       total: quotation.total,
-      status: 'in_processed',
-      customerInfo: quotation.customerInfo,
-      notes: quotation.notes ? `Converted from Quotation ${quotation.quotationNumber}. ${quotation.notes}` : `Converted from Quotation ${quotation.quotationNumber}.`,
+      status: 'IN_PROCESSED', // Immediately active to trigger standard inventory deduction
+      customerInfo: {
+        name: quotation.customerName,
+        email: quotation.customerEmail,
+        phone: quotation.customerPhone,
+        address: quotation.customerAddress,
+      },
+      notes: quotation.notes ? `Converted from Quotation ${quotation.quotationNum}. ${quotation.notes}` : `Converted from Quotation ${quotation.quotationNum}.`,
     };
 
-    // We need orderController logic. Let's just import it and use it.
-    // But `orderController.createOrder(req, res)` will send the response itself!
-    // So we can intercept the res.status().json() or just let it send the response, and then we update the quotation.
-    // Better: let's do the DB operations here.
-    
     const { createOrder } = require('./orderController');
     
-    // Instead of intercepting res, let's decouple the stock logic from orderController, OR we can just use a fake response object to capture the result.
     let orderData = null;
     let orderError = null;
     let orderStatusCode = 500;
@@ -278,16 +462,20 @@ const convertToOrder = async (req, res) => {
       return res.status(orderStatusCode).json(orderError);
     }
     
-    // If order created successfully, update quotation
-    quotation.status = 'converted';
-    quotation.convertedToOrder = orderData.data._id;
-    await quotation.save();
+    // If successful, link them!
+    await prisma.quotation.update({
+      where: { id: quotationId },
+      data: { 
+        status: 'CONVERTED',
+        convertedToOrderId: orderData.data.id
+      } 
+    });
     
     res.status(200).json({
       success: true,
       message: 'Quotation converted to order successfully',
       data: {
-        quotation,
+        quotation: await prisma.quotation.findUnique({ where: { id: quotationId } }),
         order: orderData.data
       }
     });

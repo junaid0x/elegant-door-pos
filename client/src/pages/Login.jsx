@@ -10,8 +10,8 @@ const Login = () => {
   const { login } = useAuth();
 
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
+    email: 'admin@elegantdoors.com',
+    password: 'admin123',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -86,6 +86,10 @@ const Login = () => {
           </div>
           <h1 className="text-2xl font-bold text-white">Elegant Doors</h1>
           <p className="text-slate-400 mt-1 text-sm">Sign in to your POS account</p>
+          <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-xs font-medium text-amber-300">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+            Demo Credentials Pre-filled
+          </div>
         </div>
 
         {/* Login Form */}

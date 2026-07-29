@@ -1,7 +1,5 @@
-const Product = require('../models/Product');
-const User = require('../models/User');
-
-const Category = require('../models/Category');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 // @desc    Get dashboard statistics
 // @route   GET /api/dashboard/stats
@@ -9,65 +7,74 @@ const Category = require('../models/Category');
 const getStats = async (req, res, next) => {
   try {
     // --- Core counts (run in parallel for speed) ---
-    const [totalProducts, outOfStock, lowInventory, inStock, totalUsers] =
-      await Promise.all([
-        // Total products
-        Product.countDocuments(),
-
-        // Out of stock: quantity === 0
-        Product.countDocuments({ quantity: 0 }),
-
-        // Low inventory: quantity > 0 AND quantity <= lowStockThreshold
-        Product.countDocuments({
-          $expr: {
-            $and: [
-              { $gt: ['$quantity', 0] },
-              { $lte: ['$quantity', '$lowStockThreshold'] },
-            ],
-          },
-        }),
-
-        // In stock: quantity > lowStockThreshold
-        Product.countDocuments({
-          $expr: { $gt: ['$quantity', '$lowStockThreshold'] },
-        }),
-
-        // Total active users
-        User.countDocuments({ isActive: true }),
-      ]);
-
-    // --- Inventory value aggregation ---
-    const inventoryValueResult = await Product.aggregate([
-      {
-        $group: {
-          _id: null,
-          totalValue: { $sum: { $multiply: ['$quantity', '$price'] } },
-        },
-      },
+    const [totalProducts, totalUsers, totalCategories] = await Promise.all([
+      prisma.product.count(),
+      prisma.user.count({ where: { isActive: true } }),
+      prisma.category.count()
     ]);
-    const totalInventoryValue =
-      inventoryValueResult.length > 0 ? inventoryValueResult[0].totalValue : 0;
 
-    // --- Category count ---
-    const totalCategories = await Category.countDocuments();
+    // Fetch all products with variants to calculate inventory accurately
+    const products = await prisma.product.findMany({
+      include: { variants: true }
+    });
 
-    // --- Low stock & Out of stock products (actionable list) ---
-    const lowStockProducts = await Product.find({
-      $expr: {
-        $lte: ['$quantity', '$lowStockThreshold'],
-      },
-    })
-      .select('name sku quantity lowStockThreshold price')
-      .sort({ quantity: 1 })
-      .limit(10)
-      .lean();
+    let inStock = 0;
+    let lowInventory = 0;
+    let outOfStock = 0;
+    let totalInventoryValue = 0;
+
+    const lowStockProducts = [];
+
+    products.forEach(p => {
+      let productTotalQty = 0;
+      let hasLowVariant = false;
+
+      p.variants.forEach(v => {
+        productTotalQty += v.quantity;
+        totalInventoryValue += (v.quantity * Number(v.price));
+        if (v.quantity > 0 && v.quantity <= p.lowStockThreshold) {
+          hasLowVariant = true;
+        }
+      });
+
+      if (productTotalQty === 0) {
+        outOfStock++;
+      } else if (hasLowVariant) {
+        lowInventory++;
+        if (lowStockProducts.length < 10) {
+          lowStockProducts.push({
+            id: p.id,
+            name: p.name,
+            sku: p.sku,
+            quantity: productTotalQty, // mapped for legacy frontend table
+            lowStockThreshold: p.lowStockThreshold,
+            price: p.variants.length > 0 ? Number(p.variants[0].price) : 0,
+            _id: p.id // Legacy mapping
+          });
+        }
+      } else {
+        inStock++;
+      }
+    });
+
+    // Sort low stock products ascending by quantity
+    lowStockProducts.sort((a, b) => a.quantity - b.quantity);
 
     // --- Recent products (last 5 added) ---
-    const recentProducts = await Product.find()
-      .select('name sku quantity price createdAt')
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .lean();
+    const recentProductsRaw = await prisma.product.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      include: { variants: true }
+    });
+
+    const recentProducts = recentProductsRaw.map(p => ({
+      name: p.name,
+      sku: p.sku,
+      quantity: p.variants.reduce((sum, v) => sum + v.quantity, 0),
+      price: p.variants.length > 0 ? Number(p.variants[0].price) : 0,
+      createdAt: p.createdAt,
+      _id: p.id // Legacy mapping
+    }));
 
     res.json({
       success: true,

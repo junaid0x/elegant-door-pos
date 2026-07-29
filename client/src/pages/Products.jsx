@@ -164,9 +164,15 @@ const Products = () => {
   }, [fetchData]);
 
   // ─── Helpers ─────────────────────────────────────────────────
-  const getProductStatus = (quantity, threshold) => {
-    if (quantity === 0) return 'Out Of Stock';
-    if (quantity <= threshold) return 'Low Inventory';
+  const getProductStatus = (variants, threshold) => {
+    if (!variants || variants.length === 0) return 'Out Of Stock';
+    const totalQty = variants.reduce((sum, v) => sum + v.quantity, 0);
+    if (totalQty === 0) return 'Out Of Stock';
+    
+    // Check if any specific variant is low
+    const hasLowVariant = variants.some(v => v.quantity > 0 && v.quantity <= threshold);
+    if (hasLowVariant) return 'Low Inventory';
+    
     return 'In Stock';
   };
 
@@ -187,7 +193,7 @@ const Products = () => {
   const filteredProducts = useMemo(() => {
     if (activeFilter === 'All') return products;
     return products.filter((p) => {
-      const status = getProductStatus(p.quantity, p.lowStockThreshold);
+      const status = getProductStatus(p.variants, p.lowStockThreshold);
       return status === activeFilter;
     });
   }, [products, activeFilter]);
@@ -350,7 +356,25 @@ const Products = () => {
                 {/* Data rows */}
                 {!loading &&
                   filteredProducts.map((product, index) => {
-                    const status = getProductStatus(product.quantity, product.lowStockThreshold);
+                    const status = getProductStatus(product.variants, product.lowStockThreshold);
+                    const variants = product.variants || [];
+                    const isMulti = variants.length > 1;
+                    
+                    let displayQty = '0';
+                    let displayPrice = '$0.00';
+                    
+                    if (variants.length > 0) {
+                      if (isMulti) {
+                        displayQty = `${variants.length} Variants`;
+                        const prices = variants.map(v => Number(v.price));
+                        const min = Math.min(...prices);
+                        const max = Math.max(...prices);
+                        displayPrice = min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`;
+                      } else {
+                        displayQty = variants[0].quantity.toString();
+                        displayPrice = `$${Number(variants[0].price).toFixed(2)}`;
+                      }
+                    }
                     return (
                       <tr
                         key={product._id}
@@ -376,10 +400,10 @@ const Products = () => {
                           {product.category?.name || <span className="text-red-400 italic">Uncategorized</span>}
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-700">
-                          {product.quantity}
+                          {displayQty}
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-700">
-                          ${Number(product.price).toFixed(2)}
+                          {displayPrice}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(status)}`}>
